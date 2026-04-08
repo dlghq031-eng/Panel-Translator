@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "AI 번역기",
+  "version": "1.0.0",
+  "description": "OpenAI를 이용한 웹페이지 텍스트 번역 확장 프로그램",
+
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab"
+  ],
+
+  "host_permissions": [
+    "https://api.openai.com/*"
+  ],
+
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-script.js"],
+      "css": ["styles.css"]
+    }
+  ],
+
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+
+  "action": {
+    "default_title": "AI 번역기 열기"
+  }
+}

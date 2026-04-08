@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<!--
+  sidepanel.html
+  --------------
+  크롬 사이드 패널에 표시되는 UI 페이지.
+  - 원문 textarea
+  - 번역 대상 언어 선택 드롭다운
+  - 번역 버튼 및 결과 출력 영역
+  - API 키 설정 섹션 (chrome.storage에 안전하게 저장)
+-->
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 번역기</title>
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+
+  <!-- ───── 헤더 ───── -->
+  <header class="panel-header">
+    <h1 class="panel-title">🌐 AI 번역기</h1>
+    <button id="btn-settings-toggle" class="icon-btn" title="설정">⚙️</button>
+  </header>
+
+  <!-- ───── 설정 섹션 (기본 숨김) ───── -->
+  <section id="settings-section" class="settings-section hidden">
+    <h2 class="section-title">설정</h2>
+
+    <label class="field-label" for="input-api-key">OpenAI API 키</label>
+    <div class="api-key-row">
+      <input
+        type="password"
+        id="input-api-key"
+        class="text-input"
+        placeholder="sk-..."
+        autocomplete="off"
+      />
+      <button id="btn-toggle-key" class="icon-btn" title="보이기/숨기기">👁️</button>
+    </div>
+    <p class="hint-text">API 키는 이 기기의 로컬 스토리지에만 저장됩니다.</p>
+
+    <label class="field-label" for="select-default-lang">기본 번역 언어</label>
+    <select id="select-default-lang" class="select-input">
+      <option value="Korean">한국어</option>
+      <option value="English">영어</option>
+      <option value="Japanese">일본어</option>
+      <option value="Chinese (Simplified)">중국어 (간체)</option>
+      <option value="Spanish">스페인어</option>
+      <option value="French">프랑스어</option>
+      <option value="German">독일어</option>
+    </select>
+
+    <button id="btn-save-settings" class="primary-btn">저장</button>
+    <p id="settings-msg" class="msg-text hidden"></p>
+  </section>
+
+  <!-- ───── 번역 폼 ───── -->
+  <main class="panel-main">
+    <label class="field-label" for="input-source">번역할 원문</label>
+    <textarea
+      id="input-source"
+      class="source-textarea"
+      placeholder="번역할 텍스트를 입력하거나, 웹페이지에서 드래그하세요."
+      rows="6"
+    ></textarea>
+
+    <div class="controls-row">
+      <label class="field-label inline" for="select-lang">번역 언어</label>
+      <select id="select-lang" class="select-input flex-1">
+        <option value="Korean">한국어</option>
+        <option value="English">영어</option>
+        <option value="Japanese">일본어</option>
+        <option value="Chinese (Simplified)">중국어 (간체)</option>
+        <option value="Spanish">스페인어</option>
+        <option value="French">프랑스어</option>
+        <option value="German">독일어</option>
+      </select>
+    </div>
+
+    <button id="btn-translate" class="primary-btn">번역하기</button>
+
+    <!-- 번역 결과 영역 -->
+    <section id="result-section" class="result-section hidden">
+      <div class="result-header">
+        <span class="field-label">번역 결과</span>
+        <button id="btn-copy" class="icon-btn small" title="복사">📋</button>
+      </div>
+      <div id="result-output" class="result-output"></div>
+    </section>
+
+    <!-- 로딩 스피너 -->
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>번역 중...</span>
+    </div>
+
+    <!-- 에러 메시지 -->
+    <p id="error-msg" class="error-msg hidden"></p>
+  </main>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
