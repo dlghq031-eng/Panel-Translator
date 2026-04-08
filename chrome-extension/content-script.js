@@ -18,15 +18,22 @@
   const INLINE_CARD_ID = "ai-translator-inline-card";
   let hideTimer = null;
 
-  // [추가] 중복 버튼 방지를 위한 두 가지 상태 변수
-  // isMouseDown  : 버튼/카드 외부에서 mousedown이 실제로 발생했는지 추적.
-  //               이 플래그가 true일 때만 mouseup에서 버튼 표시 로직을 실행한다.
-  //               덕분에 mousedown 없이 발생하는 stray mouseup을 무시할 수 있다.
+  // 상태 변수 (3개)
+  //
+  // isMouseDown   : 버튼/카드 외부에서 mousedown이 실제로 발생했는지 추적.
+  //                 이 플래그가 true일 때만 mouseup에서 버튼 표시 로직을 실행한다.
+  //
   // activeSelection : 현재 버튼이 표시 중인 선택 텍스트.
-  //               같은 텍스트가 선택된 상태에서 mouseup이 반복 발생해도
-  //               이미 같은 버튼이 있으면 다시 만들지 않는다.
+  //                 같은 텍스트로 mouseup이 반복 발생해도 버튼을 다시 만들지 않는다.
+  //                 scheduleHide 완료, 번역 클릭, 카드 닫기 시 초기화한다.
+  //
+  // justTranslated : 번역 버튼 클릭 직후 true.
+  //                 브라우저 selection을 강제 해제해도 일부 페이지에서
+  //                 selection이 남는 경우를 대비한 추가 보호 플래그.
+  //                 다음 mouseup 한 번에서만 소비된 뒤 false로 돌아간다.
   let isMouseDown     = false;
   let activeSelection = "";
+  let justTranslated  = false;
 
   // ──────────────────────────────────────────────
   // 1. 텍스트 선택 감지
@@ -48,6 +55,15 @@
     if (!isMouseDown) return;
     isMouseDown = false;
 
+    // [핵심 수정 1] 번역 직후 보호 구간
+    // 번역 버튼 클릭 → selection을 강제 해제했지만 일부 페이지에서 selection이
+    // 남아 있는 경우를 대비해, 다음 mouseup 한 번은 무조건 버튼을 표시하지 않는다.
+    if (justTranslated) {
+      justTranslated = false;
+      hideNow();
+      return;
+    }
+
     const selectedText = window.getSelection().toString().trim();
 
     if (selectedText.length > 0) {
@@ -57,8 +73,9 @@
       activeSelection = selectedText;
       showFloatButton(e.pageX, e.pageY, selectedText);
     } else {
-      activeSelection = "";
-      scheduleHide();
+      // [핵심 수정 2] 선택이 없는 것이 확인된 순간 즉시 숨긴다.
+      // 기존에는 scheduleHide()를 재호출해 타이머가 리셋되면서 200~400ms 지연이 생겼다.
+      hideNow();
     }
   });
 
@@ -98,8 +115,13 @@
     // 해결: btn을 제거하기 전에 위치를 미리 캡처한다.
     const btnRect = btn.getBoundingClientRect();
     removeElement(FLOAT_BTN_ID);
-    // 번역 버튼을 클릭했으므로 activeSelection을 초기화한다.
-    // 이로써 이후 같은 텍스트를 다시 드래그해도 버튼이 표시된다.
+
+    // [핵심 수정 3] 번역 직후 두 단계 보호
+    // ① 브라우저 selection 강제 해제 — 이후 mouseup이 selection을 읽어도 빈 문자열이 된다.
+    // ② justTranslated = true — removeAllRanges()가 효과 없는 페이지에서도 다음 mouseup을 차단.
+    // ③ activeSelection 초기화 — 이후 같은 텍스트를 다시 드래그하면 버튼이 정상 표시된다.
+    window.getSelection()?.removeAllRanges();
+    justTranslated  = true;
     activeSelection = "";
 
     // 기본 목표 언어를 storage에서 읽어온다
@@ -164,6 +186,9 @@
 
     card.querySelector(".ait-card-close").addEventListener("click", () => {
       removeElement(INLINE_CARD_ID);
+      // 카드를 직접 닫을 때도 activeSelection을 초기화한다.
+      // 그래야 같은 텍스트를 다시 드래그했을 때 버튼이 정상 표시된다.
+      activeSelection = "";
     });
 
     document.body.appendChild(card);
@@ -184,15 +209,28 @@
     if (el) el.remove();
   }
 
+  // hideNow: 지연 없이 즉시 버튼/카드를 제거한다.
+  // 사용처: mouseup에서 선택이 없는 것이 확인됐을 때, 번역 직후 보호 구간 종료 시.
+  function hideNow() {
+    clearTimeout(hideTimer);
+    removeElement(FLOAT_BTN_ID);
+    removeElement(INLINE_CARD_ID);
+    activeSelection = "";
+  }
+
+  // scheduleHide: mousedown 시점에 사용하는 지연 숨김.
+  // mousedown → 버튼 클릭 → click 이벤트 순서가 있으므로
+  // 버튼 위를 클릭할 때 mousedown이 페이지에 먼저 닿아도
+  // 100ms 내에 버튼 click이 발화할 시간을 확보한다.
+  // (버튼/카드 위 mousedown은 앞의 guard로 이미 차단되므로
+  //  실제로 버튼이 지워지는 경우는 드물지만 안전장치로 유지한다.)
   function scheduleHide() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
       removeElement(FLOAT_BTN_ID);
       removeElement(INLINE_CARD_ID);
-      // 버튼/카드가 실제로 사라질 때 activeSelection을 초기화한다.
-      // 이로써 다음에 동일한 텍스트를 다시 드래그해도 버튼이 정상 표시된다.
       activeSelection = "";
-    }, 200);
+    }, 100);
   }
 
   function escapeHtml(str) {
