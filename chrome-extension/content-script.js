@@ -14,31 +14,52 @@
   // ──────────────────────────────────────────────
   // 상수 및 상태 변수
   // ──────────────────────────────────────────────
-  const FLOAT_BTN_ID  = "ai-translator-float-btn";
+  const FLOAT_BTN_ID   = "ai-translator-float-btn";
   const INLINE_CARD_ID = "ai-translator-inline-card";
   let hideTimer = null;
 
+  // [추가] 중복 버튼 방지를 위한 두 가지 상태 변수
+  // isMouseDown  : 버튼/카드 외부에서 mousedown이 실제로 발생했는지 추적.
+  //               이 플래그가 true일 때만 mouseup에서 버튼 표시 로직을 실행한다.
+  //               덕분에 mousedown 없이 발생하는 stray mouseup을 무시할 수 있다.
+  // activeSelection : 현재 버튼이 표시 중인 선택 텍스트.
+  //               같은 텍스트가 선택된 상태에서 mouseup이 반복 발생해도
+  //               이미 같은 버튼이 있으면 다시 만들지 않는다.
+  let isMouseDown     = false;
+  let activeSelection = "";
+
   // ──────────────────────────────────────────────
-  // 1. 텍스트 선택 감지 (mouseup 이벤트)
+  // 1. 텍스트 선택 감지
   // ──────────────────────────────────────────────
+
+  // mousedown: 새로운 상호작용의 시작을 기록하고 버튼 숨김을 예약
+  document.addEventListener("mousedown", (e) => {
+    if (e.target.closest(`#${FLOAT_BTN_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
+    isMouseDown = true;   // 유효한 mousedown 시작을 기록
+    scheduleHide();
+  });
+
+  // mouseup: mousedown이 쌍으로 있었을 때만 처리
   document.addEventListener("mouseup", (e) => {
     // 플로팅 버튼이나 인라인 카드 위에서의 클릭은 무시
     if (e.target.closest(`#${FLOAT_BTN_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
 
+    // mousedown 없이 날아온 stray mouseup은 무시 (중복 표시 방지 핵심)
+    if (!isMouseDown) return;
+    isMouseDown = false;
+
     const selectedText = window.getSelection().toString().trim();
 
     if (selectedText.length > 0) {
+      // 이미 같은 선택 텍스트로 버튼이 표시 중이면 다시 생성하지 않는다.
+      if (selectedText === activeSelection) return;
       clearTimeout(hideTimer);
+      activeSelection = selectedText;
       showFloatButton(e.pageX, e.pageY, selectedText);
     } else {
+      activeSelection = "";
       scheduleHide();
     }
-  });
-
-  // 페이지 다른 곳 클릭 시 버튼/카드 숨김
-  document.addEventListener("mousedown", (e) => {
-    if (e.target.closest(`#${FLOAT_BTN_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
-    scheduleHide();
   });
 
   // ──────────────────────────────────────────────
@@ -77,6 +98,9 @@
     // 해결: btn을 제거하기 전에 위치를 미리 캡처한다.
     const btnRect = btn.getBoundingClientRect();
     removeElement(FLOAT_BTN_ID);
+    // 번역 버튼을 클릭했으므로 activeSelection을 초기화한다.
+    // 이로써 이후 같은 텍스트를 다시 드래그해도 버튼이 표시된다.
+    activeSelection = "";
 
     // 기본 목표 언어를 storage에서 읽어온다
     const { defaultTargetLanguage } = await getStorageLocal(["defaultTargetLanguage"]);
@@ -165,6 +189,9 @@
     hideTimer = setTimeout(() => {
       removeElement(FLOAT_BTN_ID);
       removeElement(INLINE_CARD_ID);
+      // 버튼/카드가 실제로 사라질 때 activeSelection을 초기화한다.
+      // 이로써 다음에 동일한 텍스트를 다시 드래그해도 버튼이 정상 표시된다.
+      activeSelection = "";
     }, 200);
   }
 
