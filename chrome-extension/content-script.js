@@ -53,9 +53,12 @@
     btn.textContent = "번역";
     btn.setAttribute("aria-label", "선택한 텍스트 번역");
 
-    // 마우스 포인터 약간 위쪽에 표시
-    btn.style.left = `${x + window.scrollX}px`;
-    btn.style.top  = `${y + window.scrollY - 40}px`;
+    // [수정] e.pageX / e.pageY 는 이미 스크롤 오프셋을 포함한 문서 기준 좌표다.
+    // position: absolute 요소는 문서 기준으로 배치되므로 pageX/Y 를 그대로 사용한다.
+    // 이전 코드에서 window.scrollX/Y 를 추가로 더하면 스크롤 값이 2배가 되어
+    // 페이지를 스크롤한 상태에서 버튼이 엉뚱한 위치에 나타나는 버그가 있었다.
+    btn.style.left = `${x}px`;
+    btn.style.top  = `${y - 40}px`;
 
     btn.addEventListener("click", () => {
       handleTranslateClick(selectedText, btn);
@@ -68,6 +71,11 @@
   // 3. 번역 버튼 클릭 처리
   // ──────────────────────────────────────────────
   async function handleTranslateClick(text, btn) {
+    // [수정] getBoundingClientRect()는 요소가 DOM에 있을 때만 올바른 좌표를 반환한다.
+    // 이전 코드는 removeElement()로 btn을 먼저 제거한 뒤 rect를 읽어
+    // 항상 {top:0, left:0, bottom:0} 을 반환했고, 인라인 카드가 화면 최상단에 나타났다.
+    // 해결: btn을 제거하기 전에 위치를 미리 캡처한다.
+    const btnRect = btn.getBoundingClientRect();
     removeElement(FLOAT_BTN_ID);
 
     // 기본 목표 언어를 storage에서 읽어온다
@@ -75,7 +83,7 @@
     const targetLanguage = defaultTargetLanguage || "Korean";
 
     // 로딩 카드를 먼저 표시
-    const card = showInlineCard("번역 중...", text, btn);
+    const card = showInlineCard("번역 중...", text, btnRect);
 
     try {
       // service-worker에게 번역 요청
@@ -103,14 +111,17 @@
   // ──────────────────────────────────────────────
   // 4. 인라인 번역 카드 생성
   // ──────────────────────────────────────────────
-  function showInlineCard(resultText, originalText, anchorEl) {
+  // [수정] anchorEl(element) 대신 미리 캡처된 anchorRect(DOMRect)를 받는다.
+  // getBoundingClientRect()는 뷰포트 기준 좌표를 반환하므로,
+  // position:absolute 요소 배치를 위해 window.scrollX/Y 를 더해 문서 기준으로 변환한다.
+  function showInlineCard(resultText, originalText, anchorRect) {
     removeElement(INLINE_CARD_ID);
 
     const card = document.createElement("div");
     card.id = INLINE_CARD_ID;
 
     // 위치: 앵커(btn) 아래에 표시
-    const rect = anchorEl?.getBoundingClientRect?.() || { left: 0, bottom: 0 };
+    const rect = anchorRect || { left: 0, bottom: 0 };
     const scrollX = window.scrollX;
     const scrollY = window.scrollY;
 

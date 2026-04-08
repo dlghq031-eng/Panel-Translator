@@ -107,6 +107,12 @@ async function forwardToSidePanel(message) {
 // 5. 설정 저장 / 불러오기 (chrome.storage.local)
 // ──────────────────────────────────────────────
 async function saveSettings(payload, sendResponse) {
+  // [수정] payload가 undefined이면 chrome.storage.local.set()이 TypeError를 던진다.
+  // 호출 측 버그로 payload가 비어있는 경우를 방어적으로 처리한다.
+  if (!payload || typeof payload !== "object") {
+    sendResponse({ success: false, error: "저장할 데이터가 없습니다." });
+    return;
+  }
   await chrome.storage.local.set(payload);
   sendResponse({ success: true });
 }
