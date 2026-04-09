@@ -10,6 +10,8 @@
 (function () {
   "use strict";
 
+  const MT = PT.MESSAGE_TYPES;
+
   // ──────────────────────────────────────────────
   // DOM 요소 참조
   // ──────────────────────────────────────────────
@@ -35,9 +37,12 @@
   // 초기화: 저장된 설정 불러오기
   // ──────────────────────────────────────────────
   async function init() {
-    const response = await sendToBackground({ type: "LOAD_SETTINGS" });
+    const response = await sendToBackground({ type: MT.LOAD_SETTINGS });
     if (response?.success) {
-      const { openaiApiKey, defaultTargetLanguage } = response.data;
+      const {
+        [PT.STORAGE_KEYS.OPENAI_API_KEY]: openaiApiKey,
+        [PT.STORAGE_KEYS.DEFAULT_TARGET_LANGUAGE]: defaultTargetLanguage
+      } = response.data;
       if (openaiApiKey)         inputApiKey.value = openaiApiKey;
       if (defaultTargetLanguage) {
         selectDefaultLang.value = defaultTargetLanguage;
@@ -63,7 +68,7 @@
     hideResult();
 
     const response = await sendToBackground({
-      type: "TRANSLATE_REQUEST",
+      type: MT.TRANSLATE_REQUEST,
       payload: { text, targetLanguage }
     });
 
@@ -106,10 +111,10 @@
     const defaultLang = selectDefaultLang.value;
 
     const response = await sendToBackground({
-      type: "SAVE_SETTINGS",
+      type: MT.SAVE_SETTINGS,
       payload: {
-        openaiApiKey: apiKey,
-        defaultTargetLanguage: defaultLang
+        [PT.STORAGE_KEYS.OPENAI_API_KEY]: apiKey,
+        [PT.STORAGE_KEYS.DEFAULT_TARGET_LANGUAGE]: defaultLang
       }
     });
 
@@ -126,7 +131,7 @@
   // service-worker가 FILL_SIDEPANEL 타입으로 중계해 준다
   // ──────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "FILL_SIDEPANEL" && message.payload) {
+    if (message.type === MT.FILL_SIDEPANEL && message.payload) {
       const { text, targetLanguage } = message.payload;
       if (text) {
         inputSource.value = text;

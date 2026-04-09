@@ -7,11 +7,21 @@
  */
 
 /* ──────────────────────────────────────────────
-   플로팅 번역 버튼
+   플로팅 액션 메뉴 (확장 가능한 구조)
 ────────────────────────────────────────────── */
-#ai-translator-float-btn {
+#ai-translator-float-menu {
   position: absolute;
   z-index: 2147483647; /* 페이지 최상단에 표시 */
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 0;
+  background: transparent;
+}
+
+/* 액션 버튼(현재는 '번역' 1개만 노출) */
+.ait-float-action-btn {
+  appearance: none;
   padding: 4px 10px;
   background: #2563eb;
   color: #ffffff;
@@ -27,7 +37,7 @@
   white-space: nowrap;
 }
 
-#ai-translator-float-btn:hover {
+.ait-float-action-btn:hover {
   background: #1d4ed8;
 }
 

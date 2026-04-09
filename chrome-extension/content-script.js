@@ -14,8 +14,8 @@
   // ──────────────────────────────────────────────
   // 상수 및 상태 변수
   // ──────────────────────────────────────────────
-  const FLOAT_BTN_ID   = "ai-translator-float-btn";
-  const INLINE_CARD_ID = "ai-translator-inline-card";
+  const FLOAT_MENU_ID  = PT.UI.FLOATING_ACTION_MENU_ID;
+  const INLINE_CARD_ID = PT.UI.INLINE_CARD_ID;
   let hideTimer = null;
 
   // 상태 변수 (3개)
@@ -41,7 +41,7 @@
 
   // mousedown: 새로운 상호작용의 시작을 기록하고 버튼 숨김을 예약
   document.addEventListener("mousedown", (e) => {
-    if (e.target.closest(`#${FLOAT_BTN_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
+    if (e.target.closest(`#${FLOAT_MENU_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
     isMouseDown = true;   // 유효한 mousedown 시작을 기록
     scheduleHide();
   });
@@ -49,7 +49,7 @@
   // mouseup: mousedown이 쌍으로 있었을 때만 처리
   document.addEventListener("mouseup", (e) => {
     // 플로팅 버튼이나 인라인 카드 위에서의 클릭은 무시
-    if (e.target.closest(`#${FLOAT_BTN_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
+    if (e.target.closest(`#${FLOAT_MENU_ID}`) || e.target.closest(`#${INLINE_CARD_ID}`)) return;
 
     // mousedown 없이 날아온 stray mouseup은 무시 (중복 표시 방지 핵심)
     if (!isMouseDown) return;
@@ -71,7 +71,7 @@
       if (selectedText === activeSelection) return;
       clearTimeout(hideTimer);
       activeSelection = selectedText;
-      showFloatButton(e.pageX, e.pageY, selectedText);
+      showFloatingActionMenu(e.pageX, e.pageY, selectedText);
     } else {
       // [핵심 수정 2] 선택이 없는 것이 확인된 순간 즉시 숨긴다.
       // 기존에는 scheduleHide()를 재호출해 타이머가 리셋되면서 200~400ms 지연이 생겼다.
@@ -80,41 +80,115 @@
   });
 
   // ──────────────────────────────────────────────
-  // 2. 플로팅 번역 버튼 생성 및 표시
+  // 2. 플로팅 액션 메뉴 생성 및 표시
   // ──────────────────────────────────────────────
-  function showFloatButton(x, y, selectedText) {
-    removeElement(FLOAT_BTN_ID);
+  function showFloatingActionMenu(x, y, selectedText) {
+    removeElement(FLOAT_MENU_ID);
     removeElement(INLINE_CARD_ID);
 
-    const btn = document.createElement("button");
-    btn.id = FLOAT_BTN_ID;
-    btn.textContent = "번역";
-    btn.setAttribute("aria-label", "선택한 텍스트 번역");
+    const menu = document.createElement("div");
+    menu.id = FLOAT_MENU_ID;
+    menu.setAttribute("role", "toolbar");
+    menu.setAttribute("aria-label", "선택 텍스트 액션");
 
     // [수정] e.pageX / e.pageY 는 이미 스크롤 오프셋을 포함한 문서 기준 좌표다.
     // position: absolute 요소는 문서 기준으로 배치되므로 pageX/Y 를 그대로 사용한다.
     // 이전 코드에서 window.scrollX/Y 를 추가로 더하면 스크롤 값이 2배가 되어
     // 페이지를 스크롤한 상태에서 버튼이 엉뚱한 위치에 나타나는 버그가 있었다.
-    btn.style.left = `${x}px`;
-    btn.style.top  = `${y - 40}px`;
+    menu.style.left = `${x}px`;
+    menu.style.top  = `${y - 40}px`;
 
-    btn.addEventListener("click", () => {
-      handleTranslateClick(selectedText, btn);
-    });
+    const actions = getActionsForSelection(selectedText);
+    for (const action of actions) {
+      menu.appendChild(createActionButton(action, selectedText));
+    }
 
-    document.body.appendChild(btn);
+    document.body.appendChild(menu);
   }
 
   // ──────────────────────────────────────────────
-  // 3. 번역 버튼 클릭 처리
+  // 3. 액션 정의 (확장 지점)
   // ──────────────────────────────────────────────
-  async function handleTranslateClick(text, btn) {
-    // [수정] getBoundingClientRect()는 요소가 DOM에 있을 때만 올바른 좌표를 반환한다.
-    // 이전 코드는 removeElement()로 btn을 먼저 제거한 뒤 rect를 읽어
-    // 항상 {top:0, left:0, bottom:0} 을 반환했고, 인라인 카드가 화면 최상단에 나타났다.
-    // 해결: btn을 제거하기 전에 위치를 미리 캡처한다.
-    const btnRect = btn.getBoundingClientRect();
-    removeElement(FLOAT_BTN_ID);
+  function getActionsForSelection(text) {
+    const actions = [
+      {
+        id: "translate",
+        label: "번역",
+        ariaLabel: "선택한 텍스트 번역",
+        onClick: handleTranslateAction,
+      },
+    ];
+
+    // "준비"만 해둔다: 플래그를 켜기 전까지는 화면에 나오지 않는다 (기존 동작 유지)
+    if (PT.FEATURE_FLAGS.ENABLE_KOREAN_LINK_ACTIONS && PT.text.isHangulIncluded(text)) {
+      actions.push(
+        {
+          id: "korean-dict",
+          label: "국어사전",
+          ariaLabel: "국어사전에서 검색",
+          onClick: (t) => openExternalLink(buildKoreanDictionaryUrl(t)),
+        },
+        {
+          id: "namu-wiki",
+          label: "나무위키",
+          ariaLabel: "나무위키에서 검색",
+          onClick: (t) => openExternalLink(buildNamuWikiUrl(t)),
+        },
+        {
+          id: "wikipedia",
+          label: "위키백과",
+          ariaLabel: "위키백과에서 검색",
+          onClick: (t) => openExternalLink(buildWikipediaKoUrl(t)),
+        }
+      );
+    }
+
+    return actions;
+  }
+
+  function createActionButton(action, selectedText) {
+    const btn = document.createElement("button");
+    btn.className = "ait-float-action-btn";
+    btn.type = "button";
+    btn.textContent = action.label;
+    btn.setAttribute("aria-label", action.ariaLabel || action.label);
+
+    btn.addEventListener("click", () => {
+      action.onClick(selectedText, btn);
+    });
+
+    return btn;
+  }
+
+  function openExternalLink(url) {
+    // content-script에서는 window.open이 막힐 수 있어, 새 탭 생성은 background가 책임지는 게 더 안전하다.
+    // 지금은 "준비" 기능이라 실제로 호출될 일은 없지만, 구조는 이 방향이 맞다.
+    chrome.runtime.sendMessage({
+      type: PT.MESSAGE_TYPES.OPEN_EXTERNAL_LINK,
+      payload: { url }
+    }).catch(() => {});
+  }
+
+  function buildKoreanDictionaryUrl(text) {
+    return `https://ko.dict.naver.com/#/search?query=${encodeURIComponent(text)}`;
+  }
+
+  function buildNamuWikiUrl(text) {
+    return `https://namu.wiki/w/${encodeURIComponent(text)}`;
+  }
+
+  function buildWikipediaKoUrl(text) {
+    return `https://ko.wikipedia.org/wiki/${encodeURIComponent(text)}`;
+  }
+
+  // ──────────────────────────────────────────────
+  // 4. 번역 액션 클릭 처리 (기존 "번역 버튼" 로직 유지)
+  // ──────────────────────────────────────────────
+  async function handleTranslateAction(text, clickedButtonEl) {
+    // 메뉴 컨테이너를 기준(anchor)으로 카드 위치를 잡는다.
+    const anchorEl = document.getElementById(FLOAT_MENU_ID) || clickedButtonEl;
+    const anchorRect = anchorEl?.getBoundingClientRect?.() || clickedButtonEl.getBoundingClientRect();
+    removeElement(FLOAT_MENU_ID);
 
     // [핵심 수정 3] 번역 직후 두 단계 보호
     // ① 브라우저 selection 강제 해제 — 이후 mouseup이 selection을 읽어도 빈 문자열이 된다.
@@ -125,16 +199,17 @@
     activeSelection = "";
 
     // 기본 목표 언어를 storage에서 읽어온다
-    const { defaultTargetLanguage } = await getStorageLocal(["defaultTargetLanguage"]);
-    const targetLanguage = defaultTargetLanguage || "Korean";
+    const { [PT.STORAGE_KEYS.DEFAULT_TARGET_LANGUAGE]: defaultTargetLanguage } =
+      await PT.chrome.storageGet([PT.STORAGE_KEYS.DEFAULT_TARGET_LANGUAGE]);
+    const targetLanguage = defaultTargetLanguage || PT.DEFAULTS.TARGET_LANGUAGE;
 
     // 로딩 카드를 먼저 표시
-    const card = showInlineCard("번역 중...", text, btnRect);
+    const card = showInlineCard("번역 중...", text, anchorRect);
 
     try {
       // service-worker에게 번역 요청
-      const response = await sendMessageToBackground({
-        type: "TRANSLATE_REQUEST",
+      const response = await PT.chrome.sendMessage({
+        type: PT.MESSAGE_TYPES.TRANSLATE_REQUEST,
         payload: { text, targetLanguage }
       });
 
@@ -149,13 +224,13 @@
 
     // 사이드 패널에도 텍스트를 전달 (사이드 패널이 열려 있을 경우 자동으로 채워짐)
     chrome.runtime.sendMessage({
-      type: "SELECTION_TO_SIDEPANEL",
+      type: PT.MESSAGE_TYPES.SELECTION_TO_SIDEPANEL,
       payload: { text, targetLanguage }
     }).catch(() => {}); // 사이드 패널이 닫혀있으면 무시
   }
 
   // ──────────────────────────────────────────────
-  // 4. 인라인 번역 카드 생성
+  // 5. 인라인 번역 카드 생성
   // ──────────────────────────────────────────────
   // [수정] anchorEl(element) 대신 미리 캡처된 anchorRect(DOMRect)를 받는다.
   // getBoundingClientRect()는 뷰포트 기준 좌표를 반환하므로,
@@ -179,9 +254,9 @@
         <span class="ait-card-label">번역 결과</span>
         <button class="ait-card-close" aria-label="닫기">✕</button>
       </div>
-      <div class="ait-card-original">${escapeHtml(originalText)}</div>
+      <div class="ait-card-original">${PT.text.escapeHtml(originalText)}</div>
       <div class="ait-card-divider"></div>
-      <div class="ait-card-result">${escapeHtml(resultText)}</div>
+      <div class="ait-card-result">${PT.text.escapeHtml(resultText)}</div>
     `;
 
     card.querySelector(".ait-card-close").addEventListener("click", () => {
@@ -202,7 +277,7 @@
   }
 
   // ──────────────────────────────────────────────
-  // 5. 유틸리티 함수들
+  // 6. 유틸리티 함수들
   // ──────────────────────────────────────────────
   function removeElement(id) {
     const el = document.getElementById(id);
@@ -213,7 +288,7 @@
   // 사용처: mouseup에서 선택이 없는 것이 확인됐을 때, 번역 직후 보호 구간 종료 시.
   function hideNow() {
     clearTimeout(hideTimer);
-    removeElement(FLOAT_BTN_ID);
+    removeElement(FLOAT_MENU_ID);
     removeElement(INLINE_CARD_ID);
     activeSelection = "";
   }
@@ -227,44 +302,18 @@
   function scheduleHide() {
     clearTimeout(hideTimer);
     hideTimer = setTimeout(() => {
-      removeElement(FLOAT_BTN_ID);
+      removeElement(FLOAT_MENU_ID);
       removeElement(INLINE_CARD_ID);
       activeSelection = "";
     }, 100);
   }
 
-  function escapeHtml(str) {
-    return str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function sendMessageToBackground(message) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
-      });
-    });
-  }
-
-  function getStorageLocal(keys) {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(keys, resolve);
-    });
-  }
-
   // ──────────────────────────────────────────────
-  // 6. 사이드 패널에서 오는 메시지 수신
+  // 7. 사이드 패널에서 오는 메시지 수신
   //    (예: 사이드 패널에서 번역 완료 알림 등 미래 확장용)
   // ──────────────────────────────────────────────
   chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === "TRANSLATE_DONE_FROM_PANEL") {
+    if (message.type === PT.MESSAGE_TYPES.TRANSLATE_DONE_FROM_PANEL) {
       // 미래 확장: 사이드 패널 번역 결과를 페이지에 표시하는 용도로 활용 가능
     }
   });

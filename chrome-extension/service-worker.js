@@ -7,16 +7,13 @@
  * - OpenAI API를 직접 호출한다 (API 키가 외부에 노출되지 않도록 여기서 처리).
  */
 
-// ──────────────────────────────────────────────
-// 0. 모델 상수
-//    모델명을 한 곳에서 관리한다.
-//    테스트 단계에서 비용을 줄이려면 TRANSLATION 을 "gpt-4o-mini" 로 바꾼다.
-//    미래에 문법 설명·유사 표현 등 분석 기능을 붙일 때는 ANALYSIS 를 활용한다.
-// ──────────────────────────────────────────────
-const MODELS = {
-  TRANSLATION: "gpt-4o",       // 번역 품질 우선 — 자연스러운 표현에 강하다
-  ANALYSIS:    "gpt-4o",       // (미래 기능) 문법 설명·유사 표현 생성용
-};
+// 공통 상수/유틸 로드 (MV3 service worker에서는 importScripts 사용 가능)
+importScripts(
+  "shared/namespace.js",
+  "shared/constants.js",
+  "shared/chrome-helpers.js",
+  "shared/text-utils.js"
+);
 
 // ──────────────────────────────────────────────
 // 1. 툴바 아이콘 클릭 → 사이드 패널 열기
@@ -33,25 +30,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.type) {
 
     // sidepanel 또는 content-script → 번역 요청
-    case "TRANSLATE_REQUEST":
+    case PT.MESSAGE_TYPES.TRANSLATE_REQUEST:
       handleTranslation(message.payload)
         .then(result => sendResponse({ success: true, data: result }))
         .catch(err  => sendResponse({ success: false, error: err.message }));
       return true; // 비동기 응답을 위해 반드시 true 반환
 
     // content-script → 드래그 선택 텍스트를 사이드 패널로 전달
-    case "SELECTION_TO_SIDEPANEL":
+    case PT.MESSAGE_TYPES.SELECTION_TO_SIDEPANEL:
       forwardToSidePanel(message);
       break;
 
     // 설정 저장 요청
-    case "SAVE_SETTINGS":
+    case PT.MESSAGE_TYPES.SAVE_SETTINGS:
       saveSettings(message.payload, sendResponse);
       return true;
 
     // 설정 불러오기 요청
-    case "LOAD_SETTINGS":
+    case PT.MESSAGE_TYPES.LOAD_SETTINGS:
       loadSettings(sendResponse);
+      return true;
+
+    // (준비) content-script에서 외부 링크 열기 요청
+    // 지금은 FEATURE_FLAGS로 UI에서 노출되지 않으므로 실제 동작에는 영향이 없다.
+    case PT.MESSAGE_TYPES.OPEN_EXTERNAL_LINK:
+      openExternalLink(message.payload, sendResponse);
       return true;
 
     default:
@@ -66,14 +69,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 //    이 함수와 같은 패턴으로 새 함수를 만들면 된다.
 // ──────────────────────────────────────────────
 async function handleTranslation({ text, targetLanguage }) {
-  const { openaiApiKey } = await chrome.storage.local.get("openaiApiKey");
+  const { [PT.STORAGE_KEYS.OPENAI_API_KEY]: openaiApiKey } =
+    await chrome.storage.local.get(PT.STORAGE_KEYS.OPENAI_API_KEY);
 
   if (!openaiApiKey) {
     throw new Error("API 키가 설정되지 않았습니다. 사이드 패널에서 API 키를 입력해 주세요.");
   }
 
   const messages = buildTranslationMessages(text, targetLanguage);
-  const result   = await callOpenAI(messages, MODELS.TRANSLATION, { temperature: 0.2 });
+  const result = await callOpenAI(messages, PT.OPENAI.MODELS.TRANSLATION, {
+    temperature: PT.OPENAI.DEFAULT_TEMPERATURE,
+  });
   return result;
 }
 
@@ -116,9 +122,10 @@ Follow these guidelines:
 //      const explanation = await callOpenAI(msgs, MODELS.ANALYSIS, { temperature: 0.5 });
 // ──────────────────────────────────────────────
 async function callOpenAI(messages, model, options = {}) {
-  const { openaiApiKey } = await chrome.storage.local.get("openaiApiKey");
+  const { [PT.STORAGE_KEYS.OPENAI_API_KEY]: openaiApiKey } =
+    await chrome.storage.local.get(PT.STORAGE_KEYS.OPENAI_API_KEY);
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(PT.OPENAI.CHAT_COMPLETIONS_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -127,8 +134,8 @@ async function callOpenAI(messages, model, options = {}) {
     body: JSON.stringify({
       model,
       messages,
-      temperature: options.temperature ?? 0.2,
-      max_tokens:  options.max_tokens  ?? 1024,
+      temperature: options.temperature ?? PT.OPENAI.DEFAULT_TEMPERATURE,
+      max_tokens:  options.max_tokens  ?? PT.OPENAI.DEFAULT_MAX_TOKENS,
     })
   });
 
@@ -146,7 +153,7 @@ async function callOpenAI(messages, model, options = {}) {
 //    (현재 탭의 content-script → sidepanel)
 // ──────────────────────────────────────────────
 async function forwardToSidePanel(message) {
-  chrome.runtime.sendMessage({ ...message, type: "FILL_SIDEPANEL" }).catch(() => {
+  chrome.runtime.sendMessage({ ...message, type: PT.MESSAGE_TYPES.FILL_SIDEPANEL }).catch(() => {
     // 사이드 패널이 닫혀 있으면 에러가 발생할 수 있어 무시
   });
 }
@@ -165,10 +172,24 @@ async function saveSettings(payload, sendResponse) {
 
 async function loadSettings(sendResponse) {
   const data = await chrome.storage.local.get([
-    "openaiApiKey",
-    "defaultTargetLanguage"
+    PT.STORAGE_KEYS.OPENAI_API_KEY,
+    PT.STORAGE_KEYS.DEFAULT_TARGET_LANGUAGE
   ]);
   sendResponse({ success: true, data });
+}
+
+async function openExternalLink(payload, sendResponse) {
+  try {
+    const url = payload?.url;
+    if (!url || typeof url !== "string") {
+      sendResponse({ success: false, error: "URL이 올바르지 않습니다." });
+      return;
+    }
+    await chrome.tabs.create({ url });
+    sendResponse({ success: true });
+  } catch (e) {
+    sendResponse({ success: false, error: e?.message || "탭 열기 실패" });
+  }
 }
 
 // ──────────────────────────────────────────────
